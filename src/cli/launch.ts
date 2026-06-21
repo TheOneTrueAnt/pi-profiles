@@ -1,9 +1,30 @@
 import { spawn } from "node:child_process";
 import { constants } from "node:os";
 
+interface LaunchCommand {
+  command: string;
+  args: string[];
+}
+
+export function buildLaunchCommand(
+  piArgs: string[],
+  platform: NodeJS.Platform = process.platform,
+  comSpec: string | undefined = process.env.ComSpec,
+): LaunchCommand {
+  if (platform === "win32") {
+    return {
+      command: comSpec || "cmd.exe",
+      args: ["/d", "/s", "/c", "pi", ...piArgs],
+    };
+  }
+
+  return { command: "pi", args: piArgs };
+}
+
 export function launch(profilePath: string, piArgs: string[]): void {
   const env = { ...process.env, PI_CODING_AGENT_DIR: profilePath };
-  const child = spawn("pi", piArgs, { env, stdio: "inherit" });
+  const { command, args } = buildLaunchCommand(piArgs);
+  const child = spawn(command, args, { env, stdio: "inherit" });
 
   // SIGINT is delivered to the entire foreground process group when the child
   // shares the parent's TTY (stdio: "inherit"), so both parent and child
