@@ -28,7 +28,7 @@ function main(args: string[]): void {
   }
 
   if (first === "--") {
-    cmdUse(args.slice(1));
+    cmdUse(args);
     return;
   }
 

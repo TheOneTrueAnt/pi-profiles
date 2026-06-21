@@ -60,6 +60,13 @@ describe("CLI", () => {
     assert.ok(stdout.includes("No profiles found"));
   });
 
+  it("routes top-level -- arguments to the default profile launcher", () => {
+    const { status, stderr } = run(["--", "--version"], root);
+    assert.equal(status, 1);
+    assert.ok(stderr.includes("No default profile set"));
+    assert.ok(!stderr.includes("Invalid profile name"));
+  });
+
   it("create + list + set-default round trip", () => {
     writeFileSync(join(root, "agent", "auth.json"), "{}");
     writeFileSync(join(root, "agent", "models.json"), "{}");
