@@ -10,9 +10,9 @@ export interface ProfileSummary {
 }
 
 export interface CreateOpts {
-  /** Symlink auth.json from stock pi config. Default: true. */
+  /** Share auth.json from stock pi config where supported. Default: true. */
   shareAuth?: boolean;
-  /** Symlink models.json from stock pi config. Default: true. */
+  /** Share models.json from stock pi config where supported. Default: true. */
   shareModels?: boolean;
   /** Name of an existing profile to copy from. */
   from?: string;

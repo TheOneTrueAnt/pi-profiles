@@ -2,7 +2,7 @@ import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import {
   mkdirSync, rmSync, writeFileSync, existsSync,
-  readFileSync, lstatSync, readdirSync, symlinkSync, mkdtempSync,
+  readFileSync, lstatSync, readdirSync, symlinkSync, mkdtempSync, copyFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -13,6 +13,24 @@ function createTempRoot(): string {
   mkdirSync(join(root, "agent"), { recursive: true });
   mkdirSync(join(root, "profiles"), { recursive: true });
   return root;
+}
+
+function createSymlinkWhenSupported(src: string, dest: string): void {
+  try {
+    symlinkSync(src, dest);
+  } catch (err) {
+    if (process.platform !== "win32") throw err;
+    copyFileSync(src, dest);
+  }
+}
+
+function assertSharedOrCopiedJson(path: string, expected: unknown): void {
+  assert.ok(existsSync(path));
+  if (process.platform === "win32") {
+    assert.deepEqual(JSON.parse(readFileSync(path, "utf-8")), expected);
+  } else {
+    assert.ok(lstatSync(path).isSymbolicLink());
+  }
 }
 
 describe("ProfileManager", () => {
@@ -135,7 +153,7 @@ describe("ProfileManager", () => {
   });
 
   describe("create (blank)", () => {
-    it("scaffolds a blank profile with symlinked auth and models", () => {
+    it("scaffolds a blank profile with shared auth and models", () => {
       writeFileSync(join(root, "agent", "auth.json"), '{"token":"abc"}');
       writeFileSync(join(root, "agent", "models.json"), '{"models":[]}');
 
@@ -146,15 +164,15 @@ describe("ProfileManager", () => {
       assert.ok(existsSync(join(profileDir, "settings.json")));
       assert.deepEqual(JSON.parse(readFileSync(join(profileDir, "settings.json"), "utf-8")), {});
 
-      assert.ok(lstatSync(join(profileDir, "auth.json")).isSymbolicLink());
-      assert.ok(lstatSync(join(profileDir, "models.json")).isSymbolicLink());
+      assertSharedOrCopiedJson(join(profileDir, "auth.json"), { token: "abc" });
+      assertSharedOrCopiedJson(join(profileDir, "models.json"), { models: [] });
 
       for (const dir of ["extensions", "skills", "tools", "prompts", "sessions"]) {
         assert.ok(existsSync(join(profileDir, dir)), `${dir}/ should exist`);
       }
     });
 
-    it("creates with shareAuth: false (copies instead of symlinks)", () => {
+    it("creates with shareAuth: false (copies auth)", () => {
       writeFileSync(join(root, "agent", "auth.json"), '{"token":"abc"}');
       writeFileSync(join(root, "agent", "models.json"), '{"models":[]}');
 
@@ -163,10 +181,10 @@ describe("ProfileManager", () => {
       const authPath = join(root, "profiles", "work", "auth.json");
       assert.ok(!lstatSync(authPath).isSymbolicLink());
       assert.deepEqual(JSON.parse(readFileSync(authPath, "utf-8")), { token: "abc" });
-      assert.ok(lstatSync(join(root, "profiles", "work", "models.json")).isSymbolicLink());
+      assertSharedOrCopiedJson(join(root, "profiles", "work", "models.json"), { models: [] });
     });
 
-    it("creates with shareModels: false (copies instead of symlinks)", () => {
+    it("creates with shareModels: false (copies models)", () => {
       writeFileSync(join(root, "agent", "auth.json"), '{"token":"abc"}');
       writeFileSync(join(root, "agent", "models.json"), '{"models":[]}');
 
@@ -175,7 +193,7 @@ describe("ProfileManager", () => {
       const modelsPath = join(root, "profiles", "work", "models.json");
       assert.ok(!lstatSync(modelsPath).isSymbolicLink());
       assert.deepEqual(JSON.parse(readFileSync(modelsPath, "utf-8")), { models: [] });
-      assert.ok(lstatSync(join(root, "profiles", "work", "auth.json")).isSymbolicLink());
+      assertSharedOrCopiedJson(join(root, "profiles", "work", "auth.json"), { token: "abc" });
     });
 
     it("throws if profile already exists", () => {
@@ -215,24 +233,24 @@ describe("ProfileManager", () => {
       assert.deepEqual(readdirSync(join(destDir, "sessions")), []);
     });
 
-    it("preserves symlinks by default", () => {
+    it("preserves or copies shared auth by default", () => {
       const srcDir = join(root, "profiles", "src");
       mkdirSync(srcDir, { recursive: true });
       writeFileSync(join(root, "agent", "auth.json"), '{"token":"abc"}');
-      symlinkSync(join(root, "agent", "auth.json"), join(srcDir, "auth.json"));
+      createSymlinkWhenSupported(join(root, "agent", "auth.json"), join(srcDir, "auth.json"));
       writeFileSync(join(srcDir, "settings.json"), "{}");
 
       pm.create("dest", { from: "src" });
 
       const destAuth = join(root, "profiles", "dest", "auth.json");
-      assert.ok(lstatSync(destAuth).isSymbolicLink());
+      assertSharedOrCopiedJson(destAuth, { token: "abc" });
     });
 
-    it("dereferences auth symlink with shareAuth: false", () => {
+    it("copies auth with shareAuth: false", () => {
       const srcDir = join(root, "profiles", "src");
       mkdirSync(srcDir, { recursive: true });
       writeFileSync(join(root, "agent", "auth.json"), '{"token":"abc"}');
-      symlinkSync(join(root, "agent", "auth.json"), join(srcDir, "auth.json"));
+      createSymlinkWhenSupported(join(root, "agent", "auth.json"), join(srcDir, "auth.json"));
       writeFileSync(join(srcDir, "settings.json"), "{}");
 
       pm.create("dest", { from: "src", shareAuth: false });
@@ -242,11 +260,11 @@ describe("ProfileManager", () => {
       assert.deepEqual(JSON.parse(readFileSync(destAuth, "utf-8")), { token: "abc" });
     });
 
-    it("dereferences models symlink with shareModels: false", () => {
+    it("copies models with shareModels: false", () => {
       const srcDir = join(root, "profiles", "src");
       mkdirSync(srcDir, { recursive: true });
       writeFileSync(join(root, "agent", "models.json"), '{"models":[]}');
-      symlinkSync(join(root, "agent", "models.json"), join(srcDir, "models.json"));
+      createSymlinkWhenSupported(join(root, "agent", "models.json"), join(srcDir, "models.json"));
       writeFileSync(join(srcDir, "settings.json"), "{}");
 
       pm.create("dest", { from: "src", shareModels: false });
@@ -291,7 +309,7 @@ describe("ProfileManager", () => {
       assert.ok(existsSync(join(profileDir, "skills", "my-skill.ts")));
     });
 
-    it("symlinks auth and models from stock by default", () => {
+    it("shares auth and models from stock by default", () => {
       writeFileSync(join(root, "agent", "auth.json"), '{"token":"abc"}');
       writeFileSync(join(root, "agent", "models.json"), '{"models":[]}');
       writeFileSync(join(root, "agent", "settings.json"), "{}");
@@ -299,8 +317,8 @@ describe("ProfileManager", () => {
       pm.create("work", { fromBase: true });
 
       const profileDir = join(root, "profiles", "work");
-      assert.ok(lstatSync(join(profileDir, "auth.json")).isSymbolicLink());
-      assert.ok(lstatSync(join(profileDir, "models.json")).isSymbolicLink());
+      assertSharedOrCopiedJson(join(profileDir, "auth.json"), { token: "abc" });
+      assertSharedOrCopiedJson(join(profileDir, "models.json"), { models: [] });
     });
 
     it("copies auth when shareAuth: false", () => {
@@ -313,7 +331,7 @@ describe("ProfileManager", () => {
       const authPath = join(root, "profiles", "work", "auth.json");
       assert.ok(!lstatSync(authPath).isSymbolicLink());
       assert.deepEqual(JSON.parse(readFileSync(authPath, "utf-8")), { token: "abc" });
-      assert.ok(lstatSync(join(root, "profiles", "work", "models.json")).isSymbolicLink());
+      assertSharedOrCopiedJson(join(root, "profiles", "work", "models.json"), { models: [] });
     });
 
     it("excludes sessions contents from stock", () => {
