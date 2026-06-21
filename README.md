@@ -59,8 +59,8 @@ Each profile is a complete pi agentDir:
 ```
 ~/.pi/profiles/work/
 ├── settings.json
-├── auth.json → ~/.pi/agent/auth.json  (symlink by default)
-├── models.json → ~/.pi/agent/models.json
+├── auth.json   (shared from ~/.pi/agent/auth.json by default)
+├── models.json (shared from ~/.pi/agent/models.json by default)
 ├── extensions/
 ├── skills/
 ├── tools/
@@ -68,9 +68,10 @@ Each profile is a complete pi agentDir:
 └── sessions/
 ```
 
-Auth and models are symlinked from the stock pi config by default, so one
-`pi login` works everywhere. Pass `--own-auth` or `--own-models` to `create` for independent
-credentials.
+Auth and models are shared from the stock pi config by default, so one
+`pi login` works everywhere. On Windows, `ppi` falls back to a hard link or copy
+when symlinks are unavailable. Pass `--own-auth` or `--own-models` to `create`
+for independent credentials.
 
 ## Goals
 

@@ -8,6 +8,7 @@ import {
   statSync,
   lstatSync,
   symlinkSync,
+  linkSync,
   readlinkSync,
   rmSync,
   copyFileSync,
@@ -178,11 +179,49 @@ export class ProfileManager {
       const stockPath = join(this.agentDir, file);
       if (existsSync(stockPath)) {
         if (share) {
-          symlinkSync(stockPath, join(profileDir, file));
+          this.linkOrCopyFile(stockPath, join(profileDir, file));
         } else {
           copyFileSync(stockPath, join(profileDir, file));
         }
       }
+    }
+  }
+
+  private linkOrCopyFile(src: string, dest: string): void {
+    try {
+      symlinkSync(src, dest, "file");
+      return;
+    } catch (err) {
+      if (process.platform !== "win32") {
+        throw err;
+      }
+    }
+
+    try {
+      linkSync(src, dest);
+      return;
+    } catch {
+      copyFileSync(src, dest);
+    }
+  }
+
+  private preserveSymlinkOrCopyTarget(srcPath: string, destPath: string): void {
+    const linkTarget = readlinkSync(srcPath);
+    try {
+      symlinkSync(linkTarget, destPath);
+      return;
+    } catch (err) {
+      if (process.platform !== "win32") {
+        throw err;
+      }
+    }
+
+    const resolvedTarget = resolve(dirname(srcPath), linkTarget);
+    const targetStat = statSync(resolvedTarget);
+    if (targetStat.isDirectory()) {
+      this.copyDirPreservingSymlinks(resolvedTarget, destPath);
+    } else {
+      this.linkOrCopyFile(resolvedTarget, destPath);
     }
   }
 
@@ -206,8 +245,7 @@ export class ProfileManager {
       const stat = lstatSync(srcPath);
 
       if (stat.isSymbolicLink()) {
-        const linkTarget = readlinkSync(srcPath);
-        symlinkSync(linkTarget, destPath);
+        this.preserveSymlinkOrCopyTarget(srcPath, destPath);
       } else if (stat.isDirectory()) {
         if (entry === excludeDir) {
           mkdirSync(destPath, { recursive: true });
